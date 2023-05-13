@@ -10,7 +10,7 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.0
+# Version 0.0.1
 
 # Options
 set +o xtrace
@@ -51,6 +51,9 @@ function show_usage() {
     echo -e "create\t\t\t\t\tCreate new snapshot."
     echo -e "send\t\t\t\t\tSend snapshot to remote file. (Insite a remotely mapped folder only)"
     echo -e "delete\t\t\t\t\tDelete given snapshot."
+    echo -e "dump\t\t\t\t\tDump snapshot file content."
+    echo -e "diff\t\t\t\t\tShow differences between last snapshot and now."
+    echo -e "history\t\t\t\t\tShow all changes done on the pool."
     echo -e "\nOptions:\n"
     echo -e "-h|--help\t\t\t\tShow this message."
     echo -e "-v|--version\t\t\t\tShow script version."
@@ -64,6 +67,16 @@ function show_usage() {
     echo -e "--output=</path/to/snapshot/file>\tCompress snapshot file in given format."
     echo -e "\nDisclaimer:\n\n /!\ This script is still experimental so use it with caution. /!\ \n"
     exit
+}
+function zpool_history() {
+    if [[ $DRY_RUN == true ]]; then
+        echo -e "[DRY-RUN] Should run: sudo zpool history\n"
+    else
+        if [[ $DEBUG_MODE == true ]]; then
+            echo -e "[DEBUG] Running: sudo zpool history\n"
+        fi
+        sudo zpool history
+    fi
 }
 function zfs_list() {
     if [[ $DRY_RUN == true ]]; then
@@ -240,6 +253,36 @@ function zfs_dump() {
         zstream dump "$SNAP_FOLDER"/"$OUTPUT_NAME"
     fi
 }
+function zfs_diff() {
+    # Fish command
+    # for D in $(zfs list -t snapshot | grep "$(for S in $(zfs list -H | awk '{ print $1 }') ; zfs get all -H $S | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; end)" | grep "$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }' | sed -e 's/zpcachyos@//')" | awk '{ print $1 }') ; sudo zfs diff -F $D ; end > /tmp/zfs-diff.log && less /tmp/zfs-diff.log
+    # Bash converted command
+    # for D in $(zfs list -t snapshot | grep "$(for S in $(zfs list -H | awk '{ print $1 }') ; do zfs get all -H "$S" | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; done)" | grep "$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }' | sed -e 's/zpcachyos@//')" | awk '{ print $1 }') ; do sudo zfs diff -F "$D" ; done > /tmp/zfs-diff.log && less /tmp/zfs-diff.log
+    
+    local ZFS_DIFF_CMD
+    local DATASETS
+    local MOUNTED_SNAPSHOTS
+
+    mapfile -t DATASETS < <(zfs list -H | awk '{ print $1 }')
+    MOUNTED_SNAPSHOTS=$(zfs list -t snapshot | grep "$(for S in "${DATASETS[@]}" ; do zfs get all -H "$S" | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; done)" | grep "${LAST_SNAP//$POOL_NAME@/}" | awk '{ print $1 }')
+
+    # The command below is awful but is the most faster
+    # ZFS_DIFF_CMD="for D in $(zfs list -t snapshot | grep "$(for S in $(zfs list -H | awk '{ print $1 }') ; do zfs get all -H "$S" | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; done)" | grep "$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }' | sed -e 's/'"$POOL_NAME"'@//')" | awk '{ print $1 }') ; do sudo zfs diff -F \$D ; done > /tmp/zfs-diff.log && less /tmp/zfs-diff.log"
+    # ZFS_DIFF_CMD="for D in $(zfs list -t snapshot | grep "$(for S in $(zfs list -H | awk '{ print $1 }') ; do zfs get all -H "$S" | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; done)" | grep "${LAST_SNAP//$POOL_NAME@/}" | awk '{ print $1 }') ; do sudo zfs diff -F \$D ; done > /tmp/zfs-diff.log && less /tmp/zfs-diff.log"
+
+    # Improved command but it might be a little bit slower
+    ZFS_DIFF_CMD="for D in $MOUNTED_SNAPSHOTS ; do sudo zfs diff -F \$D ; done"
+
+    if [[ $DRY_RUN == true ]]; then
+        echo -e "[DRY-RUN] Should run:\n$ZFS_DIFF_CMD\n"
+    else
+        if [[ $DEBUG_MODE == true ]]; then
+            echo -e "[DEBUG] Running:\n$ZFS_DIFF_CMD\n"
+        fi
+        # shellcheck disable=SC2086
+        eval $ZFS_DIFF_CMD > /tmp/zfs-diff.log && less /tmp/zfs-diff.log
+    fi
+}
 function init_snap_mgr() {
     case $ZFS_ACTION in
         "list") zfs_list ;;
@@ -247,11 +290,13 @@ function init_snap_mgr() {
         "send") zfs_send ;;
         "delete") zfs_delete ;;
         "dump") zfs_dump ;;
+        "diff") zfs_diff ;;
+        "history") zpool_history ;;
     esac
 }
 
 # Header
-echo -e "\nSimple CachyOS ZFS snapshot manager"
+echo -e "\nSimple CachyOS ZFS snapshot manager\n"
 
 # Checks
 [[ $# -eq 0 ]] && show_usage
@@ -283,6 +328,12 @@ for ARG in "$@"; do
         ;;
         "dump")
             ZFS_ACTION="dump"
+        ;;
+        "diff")
+            ZFS_ACTION="diff"
+        ;;
+        "history")
+            ZFS_ACTION="history"
         ;;
         "-h"|"--help") show_usage ;;
         "-v"|"--version") show_version ;;
