@@ -10,7 +10,7 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.1
+# Version 0.0.2
 
 # Options
 set +o xtrace
@@ -280,7 +280,9 @@ function zfs_diff() {
             echo -e "[DEBUG] Running:\n$ZFS_DIFF_CMD\n"
         fi
         # shellcheck disable=SC2086
-        eval $ZFS_DIFF_CMD > /tmp/zfs-diff.log && less /tmp/zfs-diff.log
+        eval $ZFS_DIFF_CMD > /tmp/zfs-diff.log && \
+            sort --parallel="$(nproc)" /tmp/zfs-diff.log -o /tmp/zfs-diff-sorted.log && \
+            less /tmp/zfs-diff-sorted.log
     fi
 }
 function init_snap_mgr() {
