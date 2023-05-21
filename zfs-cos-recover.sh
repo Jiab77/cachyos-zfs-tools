@@ -61,7 +61,7 @@
 # zfs mount zpcachyos/ROOT/cos/root
 # zpool export zpcachyos
 #
-# Version 0.0.1
+# Version 0.0.2
 
 # Options
 set -o xtrace
@@ -110,7 +110,7 @@ function get_ashift_value() {
     if [[ $ASHIFT_VALUE -eq 12 ]]; then
         read -rp "Fix 'ashift' value to 13 for SSDs? [y,N]: " CONFIRM_ASHIFT
         if [[ -n "$CONFIRM_ASHIFT" && "${CONFIRM_ASHIFT,,}" == "y" ]]; then
-            echo -e "\nNoted. 'ashift' value will changed during the import.\n"
+            echo -e "\nNoted. 'ashift' value will be changed during the import.\n"
             FIX_ASHIFT=true
         else
             echo -e "\nAll good, will not touch the 'ashift' value.\n"
