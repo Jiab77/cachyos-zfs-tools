@@ -5,10 +5,10 @@
 #
 # Thanks to vnepogodin for the inspiration of the 'die' method :)
 #
-# Version 0.0.2
+# Version 0.0.3
 
 # Options
-set -o xtrace
+set +o xtrace
 
 # Config
 PROJECT_NAME="CachyOS ZFS tools/scripts"

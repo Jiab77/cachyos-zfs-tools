@@ -61,7 +61,7 @@
 # zfs mount zpcachyos/ROOT/cos/root
 # zpool export zpcachyos
 #
-# Version 0.0.3
+# Version 0.0.4
 
 # Options
 set -o xtrace
@@ -242,7 +242,7 @@ function zfs_export() {
 }
 function check_zfs_pool() {
     echo -e "\nChecking ZFS pool(s)...\n"
-    zpool status -x "$POOL_NAME" || die "Could not find '$POOL_NAME' ZFS pool."
+    zpool status -x "$POOL_NAME" 2>/dev/null || die "Could not find '$POOL_NAME' ZFS pool."
 }
 function init_recovery() {
     # Ask before init recovery
