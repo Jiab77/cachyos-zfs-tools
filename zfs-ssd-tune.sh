@@ -27,7 +27,7 @@
 # - Export
 # zpool export zpcachyos
 #
-# Version 0.0.3
+# Version 0.0.4
 
 # Options
 set -o xtrace
@@ -208,11 +208,6 @@ echo -e "\nSimple CachyOS ZFS on SSD tuning script"
 
 # Checks
 [[ $# -eq 0 ]] && show_usage
-
-# Debug
-if [[ $DEBUG_MODE == true ]]; then
-    echo -e "\nArguments: $#\n"
-fi
 
 # Arguments
 INDEX=0
