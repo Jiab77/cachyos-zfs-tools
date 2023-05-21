@@ -4,13 +4,15 @@
 # Simple CachyOS ZFS snapshot manager
 # Made by Jiab77 - 2023
 #
+# Thanks to vnepogodin for the inspiration of the 'die' method :)
+#
 # TODO:
 # - Improve snapshots folder handling
 # - Implement rollback feature
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.2
+# Version 0.0.3
 
 # Options
 set +o xtrace
@@ -68,17 +70,26 @@ function show_usage() {
     echo -e "\nDisclaimer:\n\n /!\ This script is still experimental so use it with caution. /!\ \n"
     exit
 }
+function die() {
+    echo -e "\nError: $*\n"
+    exit 255
+}
 function zpool_history() {
+    [[ $(id -u) -ne 0 ]] && die "You must run this action as root or with 'sudo'."
+
+    echo -e "\nGathering ZFS pool history...\n"
     if [[ $DRY_RUN == true ]]; then
-        echo -e "[DRY-RUN] Should run: sudo zpool history\n"
+        echo -e "[DRY-RUN] Should run: zpool history\n"
     else
         if [[ $DEBUG_MODE == true ]]; then
-            echo -e "[DEBUG] Running: sudo zpool history\n"
+            echo -e "[DEBUG] Running: zpool history\n"
         fi
-        sudo zpool history
+        zpool history
+        echo -e "\nDone.\n"
     fi
 }
 function zfs_list() {
+    echo -e "\nListing ZFS snapshots...\n"
     if [[ $DRY_RUN == true ]]; then
         echo -e "[DRY-RUN] Should run: zfs list -t snapshot\n"
     else
@@ -89,11 +100,12 @@ function zfs_list() {
     fi
 }
 function zfs_create() {
-    [[ $(id -u) -ne 0 ]] && echo -e "\nError: You must run this action as root or with 'sudo'.\n" && exit 1
+    [[ $(id -u) -ne 0 ]] && die "You must run this action as root or with 'sudo'."
     [[ $NO_PREFIX == true ]] && SNAP_NAME="${SNAP_DATE}"
     [[ $USE_GIVEN_NAME == true ]] && LAST_SNAP="$SNAP_NAME"
 
     # Create snapshot entry
+    echo -e "\nCreating ZFS snapshot '$LAST_SNAP'...\n"
     if [[ $DRY_RUN == true ]]; then
         if [[ $RECURSIVE_MODE == true ]]; then
             echo -e "[DRY-RUN] Should run: zfs snapshot -r $POOL_NAME@$SNAP_NAME\n"
@@ -105,13 +117,13 @@ function zfs_create() {
             if [[ $DEBUG_MODE == true ]]; then
                 echo -e "[DEBUG] Running: zfs snapshot -r $POOL_NAME@$SNAP_NAME\n"
             fi
-            zfs snapshot -r "$POOL_NAME@$SNAP_NAME"
+            zfs snapshot -r "$POOL_NAME@$SNAP_NAME" || die "Could not create '$SNAP_NAME' recursively."
             RET_CODE_CREATE=$?
         else
             if [[ $DEBUG_MODE == true ]]; then
                 echo -e "[DEBUG] Running: zfs snapshot $POOL_NAME@$SNAP_NAME\n"
             fi
-            zfs snapshot "$POOL_NAME@$SNAP_NAME"
+            zfs snapshot "$POOL_NAME@$SNAP_NAME" || die "Could not create '$SNAP_NAME'."
             RET_CODE_CREATE=$?
         fi
     fi
@@ -123,8 +135,7 @@ function zfs_create() {
             zfs list -t snapshot | head -n1
             zfs list -t snapshot -H | grep "$SNAP_NAME"
         else
-            echo -e "\nFailed to create snapshot.\n"
-            exit 1
+            die "Failed to create snapshot."
         fi
     fi
 }
@@ -135,29 +146,34 @@ function zfs_send() {
     [[ $SAVE_ALL == true && -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${POOL_NAME}@combined.snap"
     [[ -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
 
+    # Create snapshot folder
+    echo -e "\nCreating ZFS snapshot folder...\n"
+    mkdir -pv "$SNAP_FOLDER"
+
     # Create snapshot file
+    echo -e "\nCreating ZFS snapshot file '$OUTPUT_NAME'...\n"
     if [[ $DRY_RUN == true ]]; then
         if [[ $RECURSIVE_MODE == true ]]; then
             if [[ $INCREMENTAL_MODE == true ]]; then
                 if [[ $DEBUG_MODE == true ]]; then
-                    echo -e "[DEBUG] Running: zfs send -I $FIRST_SNAP $LAST_SNAP -R -w -v -n\n"
+                    echo -e "[DRY-RUN] Running: zfs send -I $FIRST_SNAP $LAST_SNAP -R -w -v -n\n"
                 fi
                 zfs send -I "$FIRST_SNAP" "$LAST_SNAP" -R -w -v -n
             else
                 if [[ $DEBUG_MODE == true ]]; then
-                    echo -e "[DEBUG] Running: zfs send $LAST_SNAP -R -w -v -n\n"
+                    echo -e "[DRY-RUN] Running: zfs send $LAST_SNAP -R -w -v -n\n"
                 fi
                 zfs send "$LAST_SNAP" -R -w -v -n
             fi
         else
             if [[ $INCREMENTAL_MODE == true ]]; then
                 if [[ $DEBUG_MODE == true ]]; then
-                    echo -e "[DEBUG] Running: zfs send -I $FIRST_SNAP $LAST_SNAP -w -v -n\n"
+                    echo -e "[DRY-RUN] Running: zfs send -I $FIRST_SNAP $LAST_SNAP -w -v -n\n"
                 fi
                 zfs send -I "$FIRST_SNAP" "$LAST_SNAP" -w -v -n
             else
                 if [[ $DEBUG_MODE == true ]]; then
-                    echo -e "[DEBUG] Running: zfs send $LAST_SNAP -w -v -n\n"
+                    echo -e "[DRY-RUN] Running: zfs send $LAST_SNAP -w -v -n\n"
                 fi
                 zfs send "$LAST_SNAP" -w -v -n
             fi
@@ -174,14 +190,14 @@ function zfs_send() {
                 if [[ $DEBUG_MODE == true ]]; then
                     echo -e "[DEBUG] Running: zfs send $LAST_SNAP -R -w -v > $SNAP_FOLDER/$OUTPUT_NAME\n"
                 fi
-                zfs send "$LAST_SNAP" -R -w -v > "$SNAP_FOLDER"/"$OUTPUT_NAME"
+                zfs send "$LAST_SNAP" -R -w -v > "$SNAP_FOLDER"/"$OUTPUT_NAME" || die "Could not send '$LAST_SNAP' recursively."
                 RET_CODE_SEND=$?
             fi
         else
             if [[ $DEBUG_MODE == true ]]; then
                 echo -e "[DEBUG] Running: zfs send $LAST_SNAP -w -v > $SNAP_FOLDER/$OUTPUT_NAME\n"
             fi
-            zfs send "$LAST_SNAP" -w -v > "$SNAP_FOLDER"/"$OUTPUT_NAME"
+            zfs send "$LAST_SNAP" -w -v > "$SNAP_FOLDER"/"$OUTPUT_NAME" || die "Could not send '$LAST_SNAP'."
             RET_CODE_SEND=$?
         fi
 
@@ -191,25 +207,25 @@ function zfs_send() {
                 echo -e "\nSnapshot file created.\n"
                 ls -halF "$SNAP_FOLDER"
             else
-                echo -e "\nFailed to create snapshot file.\n"
-                exit 2
+                die "Failed to create snapshot file."
             fi
         fi
     fi
 }
 function zfs_delete() {
-    [[ $(id -u) -ne 0 ]] && echo -e "\nError: You must run this action as root or with 'sudo'.\n" && exit 1
+    [[ $(id -u) -ne 0 ]] && die "You must run this action as root or with 'sudo'."
     [[ $USE_GIVEN_NAME == true ]] && LAST_SNAP="${POOL_NAME}@${SNAP_NAME}"
 
+    echo -e "\nDeleting ZFS snapshot '$LAST_SNAP'...\n"
     if [[ $DRY_RUN == true ]]; then
         if [[ $RECURSIVE_MODE == true ]]; then
             if [[ $DEBUG_MODE == true ]]; then
-                echo -e "[DEBUG] Running: zfs destroy -R -v -n $LAST_SNAP\n"
+                echo -e "[DRY-RUN] Running: zfs destroy -R -v -n $LAST_SNAP\n"
             fi
             zfs destroy -R -v -n "$LAST_SNAP"
         else
             if [[ $DEBUG_MODE == true ]]; then
-                echo -e "[DEBUG] Running: zfs destroy -v -n $LAST_SNAP\n"
+                echo -e "[DRY-RUN] Running: zfs destroy -v -n $LAST_SNAP\n"
             fi
             zfs destroy -v -n "$LAST_SNAP"
         fi
@@ -218,13 +234,13 @@ function zfs_delete() {
             if [[ $DEBUG_MODE == true ]]; then
                 echo -e "[DEBUG] Running: zfs destroy -R -v $LAST_SNAP\n"
             fi
-            zfs destroy -R -v "$LAST_SNAP"
+            zfs destroy -R -v "$LAST_SNAP" || die "Unable to remove '$LAST_SNAP' recursively."
             RET_CODE_DEL=$?
         else
             if [[ $DEBUG_MODE == true ]]; then
                 echo -e "[DEBUG] Running: zfs destroy -v $LAST_SNAP\n"
             fi
-            zfs destroy -v "$LAST_SNAP"
+            zfs destroy -v "$LAST_SNAP" || die "Unable to remove '$LAST_SNAP'."
             RET_CODE_DEL=$?
         fi
 
@@ -235,8 +251,7 @@ function zfs_delete() {
                 zfs list -t snapshot | head -n1
                 zfs list -t snapshot -H | grep "$SNAP_NAME"
             else
-                echo -e "\nFailed to delete snapshot.\n"
-                exit 3
+                die "Failed to delete snapshot."
             fi
         fi
     fi
@@ -244,13 +259,15 @@ function zfs_delete() {
 function zfs_dump() {
     [[ -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
 
+    echo -e "\nDumping ZFS snapshot details from '$SNAP_FOLDER/$OUTPUT_NAME'...\n"
     if [[ $DRY_RUN == true ]]; then
         echo -e "[DRY-RUN] Should run: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
     else
         if [[ $DEBUG_MODE == true ]]; then
             echo -e "[DEBUG] Running: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
         fi
-        zstream dump "$SNAP_FOLDER"/"$OUTPUT_NAME"
+        zstream dump "$SNAP_FOLDER"/"$OUTPUT_NAME" || die "Could not dump '$SNAP_FOLDER/$OUTPUT_NAME'."
+        echo -e "\nDone.\n"
     fi
 }
 function zfs_diff() {
@@ -346,7 +363,7 @@ for ARG in "$@"; do
         "--all") SAVE_ALL=true ;;
         "--no-prefix") NO_PREFIX=true ;;
         "--name="*)
-            [[ -z "${ARG/--name=/}" ]] && echo -e "\nError: Missing snapshot name.\n" && exit 1
+            [[ -z "${ARG/--name=/}" ]] && die "Missing snapshot name."
 
             USE_GIVEN_NAME=true
             SNAP_PREFIX="${ARG/--name=/}"
@@ -357,20 +374,19 @@ for ARG in "$@"; do
             fi
         ;;
         "--compress="*)
-            [[ -z "${ARG/--compress=/}" ]] && echo -e "\nError: Missing compression format.\n" && exit 1
+            [[ -z "${ARG/--compress=/}" ]] && die "Missing compression format."
             [[ -n "${ARG/--compress=/}" ]] && USE_COMPRESSION=true
             [[ "${ARG/--compress=/}" == "gzip" ]] && COMPRESS_WITH_GZIP=true
             [[ "${ARG/--compress=/}" == "xz" ]] && COMPRESS_WITH_XZ=true
         ;;
         "--output="*)
-            [[ -z "${ARG/--output=/}" ]] && echo -e "\nError: Missing output file.\n" && exit 1
+            [[ -z "${ARG/--output=/}" ]] && die "Missing output file."
             [[ -n "${ARG/--output=/}" ]] && OUTPUT_NAME="${ARG/--output=/}"
             [[ $USE_COMPRESSION == true && $COMPRESS_WITH_GZIP == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.gz"
             [[ $USE_COMPRESSION == true && $COMPRESS_WITH_XZ == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.xz"
         ;;
         *)
-            echo -e "\nError: Unsupported argument given: $ARG"
-            exit 4
+            die "Unsupported argument given: $ARG"
         ;;
     esac
 done

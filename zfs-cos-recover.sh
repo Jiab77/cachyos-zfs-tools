@@ -4,13 +4,15 @@
 # Simple CachyOS ZFS boot recovery
 # Made by Jiab77 - 2023
 #
+# Thanks to vnepogodin for the inspiration of the 'die' method :)
+#
 # TODO:
 # - Detect SSDs
 # - Detect installed kernel
 #
 # Commands:
 # - Detect 'ashift' value
-# zpool get -H ashift | awk '{ print $3 }'
+# zpool get -H ashift zpcachyos | awk '{ print $3 }'
 #
 # - Import with 'ashift' fix for SSD
 # zpool import -Nl zpcachyos -o ashift=13
@@ -59,10 +61,10 @@
 # zfs mount zpcachyos/ROOT/cos/root
 # zpool export zpcachyos
 #
-# Version 0.0.0
+# Version 0.0.1
 
 # Options
-set +o xtrace
+set -o xtrace
 
 # Config
 DEBUG_MODE=false
@@ -75,7 +77,7 @@ MOUNTPOINT="/mnt/zfs/root"
 MOUNTPOINT_CREATED=false
 
 # Overrides
-[[ -n "$1" ]] && POOL_NAME="$1"
+[[ $# -eq 2 ]] && POOL_NAME="$2"
 
 # Functions
 function get_version() {
@@ -85,20 +87,28 @@ function show_version() {
     echo -e "\nVersion: $(get_version)\n" ; exit
 }
 function show_usage() {
-    echo -e "\nUsage: $(basename "$0") [pool-name] -- Fix ZFS pool boot issues\n"
+    echo -e "\nUsage: $(basename "$0") [options] [pool-name] -- Fix ZFS pool boot issues\n"
     echo -e "Options:\n"
     echo -e "-h|--help\tShow this message."
     echo -e "-v|--version\tShow script version."
+    echo -e "-d|--debug\tEnable debug mode."
+    echo -e "-n|--dry-run\tSimulate changes, don't apply them."
     echo -e "\nDisclaimer:\n\n/!\ This script is still experimental so use it with caution. /!\ \n"
     exit
 }
+function die() {
+    echo -e "\nError: $*\n"
+    exit 255
+}
 function get_ashift_value() {
     local ASHIFT_VALUE
+
     echo -en "\nDetecting 'ashift' value..."
-    ASHIFT_VALUE=$(zpool get -H ashift | awk '{ print $3 }')
+    ASHIFT_VALUE=$(zpool get -H ashift "$POOL_NAME" | awk '{ print $3 }')
     echo -e " $ASHIFT_VALUE\n"
+
     if [[ $ASHIFT_VALUE -eq 12 ]]; then
-        read -rp "Fix 'ashift' value to 13 for SSD drives? [y,N]: " CONFIRM_ASHIFT
+        read -rp "Fix 'ashift' value to 13 for SSDs? [y,N]: " CONFIRM_ASHIFT
         if [[ -n "$CONFIRM_ASHIFT" && "${CONFIRM_ASHIFT,,}" == "y" ]]; then
             echo -e "\nNoted. 'ashift' value will changed during the import.\n"
             FIX_ASHIFT=true
@@ -106,7 +116,7 @@ function get_ashift_value() {
             echo -e "\nAll good, will not touch the 'ashift' value.\n"
         fi
     else
-        echo -e "\nThis ZFS pool has been tuned for SSDs.\n"
+        echo -e "\nThis ZFS pool has been already tuned for SSDs.\n"
     fi
 }
 function zpool_import() {
@@ -149,8 +159,7 @@ function create_mountpoints() {
                 MOUNTPOINT_CREATED=true
                 echo -e " done.\n"
             else
-                echo -e " failed.\n"
-                exit 4
+                die "Unable to create mountpoint."
             fi
         fi
     fi
@@ -172,8 +181,7 @@ function zfs_mount() {
             POOL_MOUNTED=true
             echo -e "\nDone.\n"
         else
-            echo -e "\nError: Unable to mount ZFS pool.\n"
-            exit 5
+            die "Unable to mount ZFS pool."
         fi
     fi
 }
@@ -194,8 +202,7 @@ function zfs_unmount() {
             POOL_MOUNTED=false
             echo -e "\nDone.\n"
         else
-            echo -e "\nError: Unable to unmount ZFS pool.\n"
-            exit 6
+            die "Unable to unmount ZFS pool."
         fi
     fi
 }
@@ -210,18 +217,16 @@ function fix_boot() {
             if [[ $RET_CODE_FIX -eq 0 ]]; then
                 echo -e "\nDone.\n"
             else
-                echo -e "\nFailed.\n"
-                exit 7
+                die "Unable to fix ZFS bootloader."
             fi
         fi
     else
-        echo -e "\nError: Can't chroot in unmounted ZFS pool.\n"
-        exit 6
+        die "Can't chroot in unmounted ZFS pool."
     fi
 }
 function zfs_export() {
     if [[ $POOL_MOUNTED == false ]]; then
-        echo -e "\nExporting ZFS pool...\n"
+        echo -e "\nExporting ZFS pool [$POOL_NAME]...\n"
         zpool export "$POOL_NAME"
         RET_CODE_EXPORT=$?
     else
@@ -232,9 +237,12 @@ function zfs_export() {
     if [[ $RET_CODE_EXPORT -eq 0 ]]; then
         echo -e "\nDone.\n"
     else
-        echo -e "\nFailed.\n"
-        exit 8
+        die "Unable to export [$POOL_NAME] ZFS pool."
     fi
+}
+function check_zfs_pool() {
+    echo -e "\nChecking ZFS pool(s)...\n"
+    zpool status -x "$POOL_NAME" || die "Could not find '$POOL_NAME' ZFS pool."
 }
 function init_recovery() {
     # Ask before init recovery
@@ -248,6 +256,7 @@ function init_recovery() {
 
     # Init recovery
     echo -e "\nInitializing CachyOS ZFS pool recovery...\n"
+    check_zfs_pool
     get_ashift_value
     zpool_import
     list_snapshots
@@ -266,8 +275,8 @@ echo -e "\nSimple CachyOS ZFS boot recovery script"
 [[ $1 == "-v" || $1 == "--version" ]] && show_version
 
 # Checks
-[[ $(id -u) -ne 0 ]] && echo -e "\nError: This script must be run as root or with 'sudo'.\n" && exit 1
-[[ $(findmnt | grep -ci "$POOL_NAME") -ne 0 ]] && echo -e "\nError: ZFS pool already mounted!\n" && exit 2
+[[ $(id -u) -ne 0 ]] && die "This script must be run as root or with 'sudo'."
+[[ $(findmnt | grep -ci "$POOL_NAME") -ne 0 ]] && die "ZFS pool already mounted!"
 
 # Main
 init_recovery
