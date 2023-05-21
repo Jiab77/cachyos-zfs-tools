@@ -5,19 +5,23 @@
 #
 # Thanks to vnepogodin for the inspiration of the 'die' method :)
 #
-# Version 0.0.0
+# Version 0.0.1
 
 # Options
 set -o xtrace
 
 # Config
 PROJECT_NAME="CachyOS ZFS tools/scripts"
+NO_HEADER=false
 ALREADY_INSTALLED=false
 INSTALL_PATH="/usr/local/bin"
 INSTALL_SCRIPTS=(
     'zfs-snap-mgr.sh'
     'zfs-cos-recover.sh'
 )
+
+# Overrides
+[[ $1 == "--no-header" ]] && NO_HEADER=true
 
 # Functions
 function get_version() {
@@ -29,7 +33,7 @@ function die() {
 }
 
 # Header
-echo -e "\nSimple $PROJECT_NAME installer - v$(get_version)\n"
+[[ $NO_HEADER == false ]] && echo -e "\nSimple $PROJECT_NAME installer - v$(get_version)\n"
 
 # Usage
 [[ $1 == "-h" && $1 == "--help" ]] && echo -e "\nUsage: $(basename "$0") -- Install $PROJECT_NAME.\n" && exit 0

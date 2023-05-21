@@ -5,7 +5,7 @@
 #
 # Thanks to vnepogodin for the inspiration of the 'die' method :)
 #
-# Version 0.0.0
+# Version 0.0.1
 
 # Options
 set -o xtrace
@@ -32,5 +32,5 @@ echo -e "\nSimple $PROJECT_NAME updater - v$(get_version)\n"
 [[ $(id -u) -ne 0 ]] && die "You must run this script as root or with 'sudo'."
 
 # Main
-./uninstall.sh
-./install.sh
+./uninstall.sh --no-header
+./install.sh --no-header
