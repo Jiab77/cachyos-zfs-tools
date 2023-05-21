@@ -7,12 +7,11 @@
 # Thanks to vnepogodin for the inspiration of the 'die' method :)
 #
 # TODO:
-# - Improve snapshots folder handling
 # - Implement rollback feature
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.4
+# Version 0.0.5
 
 # Options
 set +o xtrace
@@ -28,13 +27,15 @@ USE_COMPRESSION=false
 COMPRESS_WITH_GZIP=false
 COMPRESS_WITH_XZ=false
 SAVE_ALL=false
+HOST_NAME=$(hostname -s)
 POOL_NAME=$(zpool list -H | awk '{ print $1 }')
 FIRST_SNAP=$(zfs list -t snapshot -H | head -n1 | awk '{ print $1 }')
 PREV_SNAP=$(zfs list -t snapshot -H | grep -v "/" | tail -n2 | head -n1 | awk '{ print $1 }')
 LAST_SNAP=$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }')
 SNAP_COUNT=$(zfs list -t snapshot -H | grep -cv "/")
-SNAP_BASE=$(grep "$(id -un 1000)" /etc/passwd | head -n1 | sed -e 's/:/ /g' | awk '{ print $6 }')
-SNAP_FOLDER="$SNAP_BASE/Data/Snapshots/CachyOS"
+SNAP_MOUNT=$(grep "$(id -un 1000)" /etc/passwd | head -n1 | sed -e 's/:/ /g' | awk '{ print $6 }')
+SNAP_BASE="Data/Snapshots"
+SNAP_FOLDER="$SNAP_MOUNT/$SNAP_BASE/$HOST_NAME"
 SNAP_PREFIX="initial"
 SNAP_DATE=$(date "+%Y%m%d%H%M%S")
 SNAP_NAME="${SNAP_PREFIX}-${SNAP_DATE}"
@@ -145,6 +146,9 @@ function zfs_send() {
     [[ $SAVE_ALL == false && $SNAP_COUNT -gt 2 ]] && FIRST_SNAP="$PREV_SNAP"
     [[ $SAVE_ALL == true && -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${POOL_NAME}@combined.snap"
     [[ -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
+
+    # Sanity check
+    [[ ! -d "$SNAP_MOUNT" ]] && die "Missing remote snapshot mountpoint, please use '--mountpoint=' to specify it."
 
     # Create snapshot folder
     echo -e "\nCreating ZFS snapshot folder...\n"
@@ -259,15 +263,22 @@ function zfs_delete() {
 function zfs_dump() {
     [[ -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
 
-    echo -e "\nDumping ZFS snapshot details from '$SNAP_FOLDER/$OUTPUT_NAME'...\n"
-    if [[ $DRY_RUN == true ]]; then
-        echo -e "[DRY-RUN] Should run: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
-    else
-        if [[ $DEBUG_MODE == true ]]; then
-            echo -e "[DEBUG] Running: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
+    # Sanity check
+    [[ ! -d "$SNAP_MOUNT" ]] && die "Missing remote snapshot mountpoint, please use '--mountpoint=' to specify it."
+
+    echo -e "\nDumping ZFS snapshot details from '$OUTPUT_NAME'...\n"
+    if [[ -f "$SNAP_FOLDER/$OUTPUT_NAME" ]]; then
+        if [[ $DRY_RUN == true ]]; then
+            echo -e "[DRY-RUN] Should run: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
+        else
+            if [[ $DEBUG_MODE == true ]]; then
+                echo -e "[DEBUG] Running: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
+            fi
+            zstream dump "$SNAP_FOLDER"/"$OUTPUT_NAME" || die "Could not dump '$SNAP_FOLDER/$OUTPUT_NAME'."
+            echo -e "\nDone.\n"
         fi
-        zstream dump "$SNAP_FOLDER"/"$OUTPUT_NAME" || die "Could not dump '$SNAP_FOLDER/$OUTPUT_NAME'."
-        echo -e "\nDone.\n"
+    else
+        die "Could not find '$OUTPUT_NAME' in '$SNAP_FOLDER'."
     fi
 }
 function zfs_diff() {
@@ -319,11 +330,6 @@ echo -e "\nSimple CachyOS ZFS snapshot manager\n"
 
 # Checks
 [[ $# -eq 0 ]] && show_usage
-
-# Debug
-if [[ $DEBUG_MODE == true ]]; then
-    echo -e "\nArguments: $#\n"
-fi
 
 # Arguments
 INDEX=0
@@ -384,6 +390,10 @@ for ARG in "$@"; do
             [[ -n "${ARG/--output=/}" ]] && OUTPUT_NAME="${ARG/--output=/}"
             [[ $USE_COMPRESSION == true && $COMPRESS_WITH_GZIP == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.gz"
             [[ $USE_COMPRESSION == true && $COMPRESS_WITH_XZ == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.xz"
+        ;;
+        "--mountpoint="*)
+            [[ -z "${ARG/--mountpoint=/}" ]] && die "Missing remote snapshot mountpoint."
+            [[ -n "${ARG/--mountpoint=/}" ]] && SNAP_FOLDER="${ARG/--mountpoint=/}/$HOST_NAME"
         ;;
         *)
             die "Unsupported argument given: $ARG"
