@@ -18,6 +18,7 @@ INSTALL_PATH="/usr/local/bin"
 INSTALL_SCRIPTS=(
     'zfs-snap-mgr.sh'
     'zfs-cos-recover.sh'
+    'zfs-ssd-tune.sh'
 )
 
 # Overrides
