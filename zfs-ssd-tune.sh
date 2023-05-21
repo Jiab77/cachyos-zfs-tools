@@ -27,7 +27,7 @@
 # - Export
 # zpool export zpcachyos
 #
-# Version 0.0.1
+# Version 0.0.2
 
 # Options
 set -o xtrace
@@ -76,12 +76,16 @@ function get_ashift_value() {
     echo -e " $ASHIFT_VALUE\n"
 
     if [[ -n $ASHIFT_VALUE && $ASHIFT_VALUE -eq 12 ]]; then
-        read -rp "Fix 'ashift' value to 13 for SSDs? [y,N]: " CONFIRM_ASHIFT
-        if [[ -n "$CONFIRM_ASHIFT" && "${CONFIRM_ASHIFT,,}" == "y" ]]; then
-            echo -e "\nNoted. 'ashift' value will be changed during the import.\n"
-            FIX_ASHIFT=true
+        if [[ $# -ne 0 && $1 == "--ask" ]]; then
+            read -rp "Fix 'ashift' value to 13 for SSDs? [y,N]: " CONFIRM_ASHIFT
+            if [[ -n "$CONFIRM_ASHIFT" && "${CONFIRM_ASHIFT,,}" == "y" ]]; then
+                echo -e "\nNoted. 'ashift' value will be changed during the import.\n"
+                FIX_ASHIFT=true
+            else
+                echo -e "\nAll good, will not touch the 'ashift' value.\n"
+                exit
+            fi
         else
-            echo -e "\nAll good, will not touch the 'ashift' value.\n"
             exit
         fi
     else
@@ -208,10 +212,9 @@ for ARG in "$@"; do
         "-d"|"--debug") DEBUG_MODE=true ;;
         "-c"|"--check")
             get_ashift_value
-            exit
         ;;
         "-p"|"--patch")
-            get_ashift_value
+            get_ashift_value --ask
             zpool_tune_import
             zpool_export
         ;;
