@@ -12,7 +12,7 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.3
+# Version 0.0.4
 
 # Options
 set +o xtrace
@@ -71,7 +71,7 @@ function show_usage() {
     exit
 }
 function die() {
-    echo -e "\nError: $*\n"
+    echo -e "\nError: $*\n" >&2
     exit 255
 }
 function zpool_history() {

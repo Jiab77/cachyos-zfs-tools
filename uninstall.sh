@@ -5,7 +5,7 @@
 #
 # Thanks to vnepogodin for the inspiration of the 'die' method :)
 #
-# Version 0.0.1
+# Version 0.0.2
 
 # Options
 set -o xtrace
@@ -29,7 +29,7 @@ function get_version() {
     grep -i 'version' "$0" | awk '{ print $3 }' | head -n1
 }
 function die() {
-    echo -e "\nError: $*\n"
+    echo -e "\nError: $*\n" >&2
     exit 255
 }
 

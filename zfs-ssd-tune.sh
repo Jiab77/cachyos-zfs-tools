@@ -27,7 +27,7 @@
 # - Export
 # zpool export zpcachyos
 #
-# Version 0.0.2
+# Version 0.0.3
 
 # Options
 set -o xtrace
@@ -65,7 +65,7 @@ function show_usage() {
     exit
 }
 function die() {
-    echo -e "\nError: $*\n"
+    echo -e "\nError: $*\n" >&2
     exit 255
 }
 function get_ashift_value() {
@@ -184,7 +184,23 @@ function zpool_export() {
 }
 function check_zfs_pool() {
     echo -e "\nChecking ZFS pool(s)...\n"
-    zpool status -x "$POOL_NAME" || die "Could not find '$POOL_NAME' ZFS pool."
+    zpool status -x "$POOL_NAME" 2>/dev/null || die "Could not find '$POOL_NAME' ZFS pool."
+}
+function init_zfs_tune() {
+    case $ZPOOL_ACTION in
+        "check")
+            get_ashift_value
+        ;;
+        "patch")
+            get_ashift_value --ask
+            zpool_tune_import
+            zpool_export
+        ;;
+        "restore")
+            zpool_tune_restore
+            zpool_export
+        ;;
+    esac
 }
 
 # Header
@@ -210,18 +226,9 @@ for ARG in "$@"; do
         "-v"|"--version") show_version ;;
         "-n"|"--dry-run") DRY_RUN=true ;;
         "-d"|"--debug") DEBUG_MODE=true ;;
-        "-c"|"--check")
-            get_ashift_value
-        ;;
-        "-p"|"--patch")
-            get_ashift_value --ask
-            zpool_tune_import
-            zpool_export
-        ;;
-        "-r"|"--restore")
-            zpool_tune_restore
-            zpool_export
-        ;;
+        "-c"|"--check") ZPOOL_ACTION="check" ;;
+        "-p"|"--patch") ZPOOL_ACTION="patch" ;;
+        "-r"|"--restore") ZPOOL_ACTION="restore" ;;
         *)
             die "Unsupported argument given: $ARG"
         ;;
@@ -230,3 +237,4 @@ done
 
 # Main
 check_zfs_pool
+init_zfs_tune
