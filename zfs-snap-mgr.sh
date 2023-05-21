@@ -11,7 +11,7 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.5
+# Version 0.0.6
 
 # Options
 set +o xtrace
@@ -141,7 +141,6 @@ function zfs_create() {
     fi
 }
 function zfs_send() {
-    [[ $NO_PREFIX == true ]] && SNAP_NAME="${SNAP_DATE}"
     [[ $USE_GIVEN_NAME == true ]] && LAST_SNAP="$SNAP_NAME"
     [[ $SAVE_ALL == false && $SNAP_COUNT -gt 2 ]] && FIRST_SNAP="$PREV_SNAP"
     [[ $SAVE_ALL == true && -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${POOL_NAME}@combined.snap"
