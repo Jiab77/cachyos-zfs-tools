@@ -11,7 +11,7 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.6
+# Version 0.0.7
 
 # Options
 set +o xtrace
@@ -144,14 +144,18 @@ function zfs_send() {
     [[ $USE_GIVEN_NAME == true ]] && LAST_SNAP="$SNAP_NAME"
     [[ $SAVE_ALL == false && $SNAP_COUNT -gt 2 ]] && FIRST_SNAP="$PREV_SNAP"
     [[ $SAVE_ALL == true && -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${POOL_NAME}@combined.snap"
+    [[ $SAVE_ALL == true && $INCREMENTAL_MODE == true ]] && OUTPUT_NAME="${OUTPUT_NAME/combined/combined.incremental}"
+    [[ $SAVE_ALL == true && $INCREMENTAL_MODE == false ]] && OUTPUT_NAME="${OUTPUT_NAME/combined/combined.full}"
     [[ -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
 
     # Sanity check
     [[ ! -d "$SNAP_MOUNT" ]] && die "Missing remote snapshot mountpoint, please use '--mountpoint=' to specify it."
 
     # Create snapshot folder
-    echo -e "\nCreating ZFS snapshot folder...\n"
-    mkdir -pv "$SNAP_FOLDER"
+    if [[ ! -d "$SNAP_FOLDER" ]]; then
+        echo -e "\nCreating ZFS snapshot folder...\n"
+        mkdir -pv "$SNAP_FOLDER"
+    fi
 
     # Create snapshot file
     echo -e "\nCreating ZFS snapshot file '$OUTPUT_NAME'...\n"
