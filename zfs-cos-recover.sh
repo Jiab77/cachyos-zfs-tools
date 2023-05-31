@@ -64,7 +64,7 @@
 #
 # End of sample recovery commands
 #
-# Version 0.0.5
+# Version 0.0.6
 
 # Options
 set -o xtrace
@@ -79,9 +79,6 @@ POOL_NAME="zpcachyos"
 MOUNTPOINT="/mnt/zfs/root"
 MOUNTPOINT_CREATED=false
 
-# Overrides
-[[ $# -eq 2 ]] && POOL_NAME="$2"
-
 # Functions
 function get_version() {
     grep -i 'version' "$0" | awk '{ print $3 }' | head -n1
@@ -90,12 +87,13 @@ function show_version() {
     echo -e "\nVersion: $(get_version)\n" ; exit
 }
 function show_usage() {
-    echo -e "\nUsage: $(basename "$0") [options] [pool-name] -- Fix ZFS pool boot issues\n"
+    echo -e "\nUsage: $(basename "$0") [options] -- Fix ZFS pool boot issues\n"
     echo -e "Options:\n"
     echo -e "-h|--help\tShow this message."
     echo -e "-v|--version\tShow script version."
-    # echo -e "-d|--debug\tEnable debug mode."
-    # echo -e "-n|--dry-run\tSimulate changes, don't apply them."
+    echo -e "-d|--debug\tEnable debug mode."
+    echo -e "-n|--dry-run\tSimulate changes, don't apply them."
+    echo -e "--name=<pool-name>\t\t\tSet pool name instead of default one."
     echo -e "\nDisclaimer:\n\n/!\ This script is still experimental so use it with caution. /!\ \n"
     exit
 }
@@ -297,9 +295,27 @@ function init_recovery() {
 # Header
 echo -e "\nSimple CachyOS ZFS boot recovery script"
 
-# Usage
-[[ $1 == "-h" || $1 == "--help" ]] && show_usage
-[[ $1 == "-v" || $1 == "--version" ]] && show_version
+# Arguments
+INDEX=0
+for ARG in "$@"; do
+    if [[ $DEBUG_MODE == true ]]; then
+        echo "Arg $((INDEX++)): $ARG"
+    fi
+
+    case $ARG in
+        "-h"|"--help") show_usage ;;
+        "-v"|"--version") show_version ;;
+        "-n"|"--dry-run") DRY_RUN=true ;;
+        "-d"|"--debug") DEBUG_MODE=true ;;
+        "--name="*)
+            [[ -z "${ARG/--name=/}" ]] && die "Missing pool name."
+            POOL_NAME="${ARG/--name=/}"
+        ;;
+        *)
+            die "Unsupported argument given: $ARG"
+        ;;
+    esac
+done
 
 # Checks
 [[ $(id -u) -ne 0 ]] && die "This script must be run as root or with 'sudo'."

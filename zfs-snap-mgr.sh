@@ -11,7 +11,7 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.7
+# Version 0.0.8
 
 # Options
 set +o xtrace
@@ -52,7 +52,7 @@ function show_usage() {
     echo -e "Action:\n"
     echo -e "list\t\t\t\t\tList existing snapshots."
     echo -e "create\t\t\t\t\tCreate new snapshot."
-    echo -e "send\t\t\t\t\tSend snapshot to remote file. (Insite a remotely mapped folder only)"
+    echo -e "send\t\t\t\t\tSend snapshot to remote file. (Inside a remotely mapped folder only)"
     echo -e "delete\t\t\t\t\tDelete given snapshot."
     echo -e "dump\t\t\t\t\tDump snapshot file content."
     echo -e "diff\t\t\t\t\tShow differences between last snapshot and now."
@@ -64,10 +64,11 @@ function show_usage() {
     echo -e "-n|--dry-run\t\t\t\tSimulate requested actions, don't execute them."
     echo -e "-r|--recursive\t\t\t\tRun <ACTION> recursively."
     echo -e "-i|--incremental\t\t\tMake incremental snapshot files."
+    echo -e "--all\t\t\t\tCombine all snapshots in a single file."
     echo -e "--no-prefix\t\t\t\tUse date only as snapshot name."
-    echo -e "--name=<snapshot-name>\t\t\tSet snapshot name instead of default one."
-    echo -e "--compress=<gzip,xz>\t\t\tCompress snapshot file in given format."
-    echo -e "--output=</path/to/snapshot/file>\tCompress snapshot file in given format."
+    echo -e "--mountpoint=<mapped-remote-folder>\t\t\tSet locally mapped remote snapshot folder."
+    echo -e "--name=<snapshot-name>\t\t\tSet snapshot name instead of default one. [Use '--no-prefix' to avoid adding the current date to the name]"
+    echo -e "--compress=<gzip,xz>\t\t\tCompress snapshot file in given format. [NOT IMPLEMENTED YET]"
     echo -e "\nDisclaimer:\n\n /!\ This script is still experimental so use it with caution. /!\ \n"
     exit
 }
@@ -143,10 +144,14 @@ function zfs_create() {
 function zfs_send() {
     [[ $USE_GIVEN_NAME == true ]] && LAST_SNAP="$SNAP_NAME"
     [[ $SAVE_ALL == false && $SNAP_COUNT -gt 2 ]] && FIRST_SNAP="$PREV_SNAP"
-    [[ $SAVE_ALL == true && -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${POOL_NAME}@combined.snap"
+    [[ $SAVE_ALL == true ]] && OUTPUT_NAME="${POOL_NAME}@combined.snap"
     [[ $SAVE_ALL == true && $INCREMENTAL_MODE == true ]] && OUTPUT_NAME="${OUTPUT_NAME/combined/combined.incremental}"
     [[ $SAVE_ALL == true && $INCREMENTAL_MODE == false ]] && OUTPUT_NAME="${OUTPUT_NAME/combined/combined.full}"
-    [[ -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
+    [[ -z $OUTPUT_NAME ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
+
+    # TODO
+    # [[ $USE_COMPRESSION == true && $COMPRESS_WITH_GZIP == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.gz"
+    # [[ $USE_COMPRESSION == true && $COMPRESS_WITH_XZ == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.xz"
 
     # Sanity check
     [[ ! -d "$SNAP_MOUNT" ]] && die "Missing remote snapshot mountpoint, please use '--mountpoint=' to specify it."
@@ -264,27 +269,29 @@ function zfs_delete() {
     fi
 }
 function zfs_dump() {
-    [[ -z "$OUTPUT_NAME" ]] && OUTPUT_NAME="${LAST_SNAP}.snap"
+    [[ $USE_GIVEN_NAME == true ]] && LAST_SNAP="${POOL_NAME}@${SNAP_NAME}.snap" || LAST_SNAP="${LAST_SNAP}.snap"
 
     # Sanity check
     [[ ! -d "$SNAP_MOUNT" ]] && die "Missing remote snapshot mountpoint, please use '--mountpoint=' to specify it."
 
-    echo -e "\nDumping ZFS snapshot details from '$OUTPUT_NAME'...\n"
-    if [[ -f "$SNAP_FOLDER/$OUTPUT_NAME" ]]; then
+    echo -e "\nDumping ZFS snapshot details from '$LAST_SNAP'...\n"
+    if [[ -f "$SNAP_FOLDER/$LAST_SNAP" ]]; then
         if [[ $DRY_RUN == true ]]; then
-            echo -e "[DRY-RUN] Should run: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
+            echo -e "[DRY-RUN] Should run: zstream dump $SNAP_FOLDER/$LAST_SNAP\n"
         else
             if [[ $DEBUG_MODE == true ]]; then
-                echo -e "[DEBUG] Running: zstream dump $SNAP_FOLDER/$OUTPUT_NAME\n"
+                echo -e "[DEBUG] Running: zstream dump $SNAP_FOLDER/$LAST_SNAP\n"
             fi
-            zstream dump "$SNAP_FOLDER"/"$OUTPUT_NAME" || die "Could not dump '$SNAP_FOLDER/$OUTPUT_NAME'."
+            zstream dump "$SNAP_FOLDER"/"$LAST_SNAP" || die "Could not dump '$SNAP_FOLDER/$LAST_SNAP'."
             echo -e "\nDone.\n"
         fi
     else
-        die "Could not find '$OUTPUT_NAME' in '$SNAP_FOLDER'."
+        die "Could not find '$LAST_SNAP' in '$SNAP_FOLDER'."
     fi
 }
 function zfs_diff() {
+    [[ $USE_GIVEN_NAME == true ]] && LAST_SNAP="${SNAP_NAME}"
+
     # Fish command
     # for D in $(zfs list -t snapshot | grep "$(for S in $(zfs list -H | awk '{ print $1 }') ; zfs get all -H $S | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; end)" | grep "$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }' | sed -e 's/zpcachyos@//')" | awk '{ print $1 }') ; sudo zfs diff -F $D ; end > /tmp/zfs-diff.log && less /tmp/zfs-diff.log
     # Bash converted command
@@ -342,26 +349,8 @@ for ARG in "$@"; do
     fi
 
     case $ARG in
-        "list")
-            ZFS_ACTION="list"
-        ;;
-        "create")
-            ZFS_ACTION="create"
-        ;;
-        "send")
-            ZFS_ACTION="send"
-        ;;
-        "delete")
-            ZFS_ACTION="delete"
-        ;;
-        "dump")
-            ZFS_ACTION="dump"
-        ;;
-        "diff")
-            ZFS_ACTION="diff"
-        ;;
-        "history")
-            ZFS_ACTION="history"
+        "list"|"create"|"send"|"delete"|"dump"|"diff"|"history")
+            ZFS_ACTION="$ARG"
         ;;
         "-h"|"--help") show_usage ;;
         "-v"|"--version") show_version ;;
@@ -371,6 +360,10 @@ for ARG in "$@"; do
         "-i"|"--incremental") INCREMENTAL_MODE=true ;;
         "--all") SAVE_ALL=true ;;
         "--no-prefix") NO_PREFIX=true ;;
+        "--mountpoint="*)
+            [[ -z "${ARG/--mountpoint=/}" ]] && die "Missing remote snapshot mountpoint."
+            [[ -n "${ARG/--mountpoint=/}" ]] && SNAP_FOLDER="${ARG/--mountpoint=/}/$HOST_NAME"
+        ;;
         "--name="*)
             [[ -z "${ARG/--name=/}" ]] && die "Missing snapshot name."
 
@@ -387,16 +380,6 @@ for ARG in "$@"; do
             [[ -n "${ARG/--compress=/}" ]] && USE_COMPRESSION=true
             [[ "${ARG/--compress=/}" == "gzip" ]] && COMPRESS_WITH_GZIP=true
             [[ "${ARG/--compress=/}" == "xz" ]] && COMPRESS_WITH_XZ=true
-        ;;
-        "--output="*)
-            [[ -z "${ARG/--output=/}" ]] && die "Missing output file."
-            [[ -n "${ARG/--output=/}" ]] && OUTPUT_NAME="${ARG/--output=/}"
-            [[ $USE_COMPRESSION == true && $COMPRESS_WITH_GZIP == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.gz"
-            [[ $USE_COMPRESSION == true && $COMPRESS_WITH_XZ == true ]] && OUTPUT_NAME="${OUTPUT_NAME}.xz"
-        ;;
-        "--mountpoint="*)
-            [[ -z "${ARG/--mountpoint=/}" ]] && die "Missing remote snapshot mountpoint."
-            [[ -n "${ARG/--mountpoint=/}" ]] && SNAP_FOLDER="${ARG/--mountpoint=/}/$HOST_NAME"
         ;;
         *)
             die "Unsupported argument given: $ARG"
