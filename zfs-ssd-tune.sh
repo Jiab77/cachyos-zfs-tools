@@ -15,10 +15,10 @@
 # zpool get -H ashift zpcachyos | awk '{ print $3 }'
 #
 # - Import with 'ashift' fix for SSD
-# zpool import -Nl zpcachyos -o ashift=13
+# zpool import -lf zpcachyos -o ashift=13
 #
 # - Import
-# zpool import -Nl zpcachyos
+# zpool import -lf zpcachyos
 #
 # - Check
 # zpool status -x
@@ -27,7 +27,7 @@
 # - Export
 # zpool export zpcachyos
 #
-# Version 0.0.4
+# Version 0.0.5
 
 # Options
 set -o xtrace
@@ -101,18 +101,18 @@ function zpool_tune_import() {
 
     echo -e "\nImporting ZFS pool [$POOL_NAME] with fixed 'ashift' value for SSDs...\n"
     if [[ $DRY_RUN == true ]]; then
-        echo -e "[DRY-RUN] Should run: zpool import -Nlf $POOL_NAME -o ashift=13\n"
+        echo -e "[DRY-RUN] Should run: zpool import -lf $POOL_NAME -o ashift=13\n"
     else
         if [[ $DEBUG_MODE == true ]]; then
-            echo -e "[DEBUG] Running: zpool import -Nlf $POOL_NAME -o ashift=13\n"
+            echo -e "[DEBUG] Running: zpool import -lf $POOL_NAME -o ashift=13\n"
         fi
-        zpool import -Nlf "$POOL_NAME" -o ashift=13
+        zpool import -lf "$POOL_NAME" -o ashift=13
         RET_CODE_IMPORT=$?
 
         if [[ $RET_CODE_IMPORT -eq 0 ]]; then
             POOL_IMPORTED=true
             echo -e "\nChecking imported ZFS pool status...\n"
-            zpool status -x
+            zpool status -x "$POOL_NAME"
             echo -e "\nGathering detailed ZFS pool status...\n"
             zpool status -v "$POOL_NAME"
         else
@@ -138,18 +138,18 @@ function zpool_tune_restore() {
         echo -e "\nImporting ZFS pool [$POOL_NAME] with previous 'ashift' value...\n"
         if [[ -n "$OLD_ASHIFT_VALUE" ]]; then
             if [[ $DRY_RUN == true ]]; then
-                echo -e "[DRY-RUN] Should run: zpool import -Nlf $POOL_NAME -o ashift=$OLD_ASHIFT_VALUE\n"
+                echo -e "[DRY-RUN] Should run: zpool import -lf $POOL_NAME -o ashift=$OLD_ASHIFT_VALUE\n"
             else
                 if [[ $DEBUG_MODE == true ]]; then
-                    echo -e "[DEBUG] Running: zpool import -Nlf $POOL_NAME -o ashift=$OLD_ASHIFT_VALUE\n"
+                    echo -e "[DEBUG] Running: zpool import -lf $POOL_NAME -o ashift=$OLD_ASHIFT_VALUE\n"
                 fi
-                zpool import -Nlf "$POOL_NAME" -o ashift="$OLD_ASHIFT_VALUE"
+                zpool import -lf "$POOL_NAME" -o ashift="$OLD_ASHIFT_VALUE"
                 RET_CODE_IMPORT=$?
 
                 if [[ $RET_CODE_IMPORT -eq 0 ]]; then
                     POOL_IMPORTED=true
                     echo -e "\nChecking imported ZFS pool status...\n"
-                    zpool status -x
+                    zpool status -x "$POOL_NAME"
                     echo -e "\nGathering detailed ZFS pool status...\n"
                     zpool status -v "$POOL_NAME"
                 else
@@ -184,7 +184,7 @@ function zpool_export() {
 }
 function check_zfs_pool() {
     echo -e "\nChecking ZFS pool(s)...\n"
-    zpool status -x "$POOL_NAME" 2>/dev/null || die "Could not find '$POOL_NAME' ZFS pool."
+    zpool status -x 2>/dev/null || die "Could not find any ZFS pool."
 }
 function init_zfs_tune() {
     case $ZPOOL_ACTION in
