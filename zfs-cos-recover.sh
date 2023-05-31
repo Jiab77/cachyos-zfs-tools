@@ -10,15 +10,15 @@
 # - Detect SSDs
 # - Detect installed kernel
 #
-# Commands:
+# Sample recovery commands:
 # - Detect 'ashift' value
 # zpool get -H ashift zpcachyos | awk '{ print $3 }'
 #
 # - Import with 'ashift' fix for SSD
-# zpool import -Nl zpcachyos -o ashift=13
+# zpool import -lf zpcachyos -o ashift=13
 #
 # - Import
-# zpool import -Nl zpcachyos
+# zpool import -lf zpcachyos
 #
 # - Check
 # zpool status -x
@@ -42,6 +42,7 @@
 # zfs mount zpcachyos/ROOT/cos/varcache
 # zfs mount zpcachyos/ROOT/cos/varlog
 # mount -v /dev/sda1 /mnt/zfs/root/boot
+# mount -v /dev/nvme0n1p1 /mnt/zfs/root/boot
 #
 # - Chroot
 # arch-chroot /mnt/zfs/root
@@ -54,14 +55,16 @@
 # exit
 #
 # - Unmount pool
-# zfs mount zpcachyos/ROOT/cos/home
-# zfs mount zpcachyos/ROOT/cos/varcache
-# zfs mount zpcachyos/ROOT/cos/varlog
-# mount -v /dev/sda1 /mnt/zfs/root/boot
-# zfs mount zpcachyos/ROOT/cos/root
+# zfs umount zpcachyos/ROOT/cos/home
+# zfs umount zpcachyos/ROOT/cos/varcache
+# zfs umount zpcachyos/ROOT/cos/varlog
+# umount -v /mnt/zfs/root/boot
+# zfs umount zpcachyos/ROOT/cos/root
 # zpool export zpcachyos
 #
-# Version 0.0.4
+# End of sample recovery commands
+#
+# Version 0.0.5
 
 # Options
 set -o xtrace
@@ -91,8 +94,8 @@ function show_usage() {
     echo -e "Options:\n"
     echo -e "-h|--help\tShow this message."
     echo -e "-v|--version\tShow script version."
-    echo -e "-d|--debug\tEnable debug mode."
-    echo -e "-n|--dry-run\tSimulate changes, don't apply them."
+    # echo -e "-d|--debug\tEnable debug mode."
+    # echo -e "-n|--dry-run\tSimulate changes, don't apply them."
     echo -e "\nDisclaimer:\n\n/!\ This script is still experimental so use it with caution. /!\ \n"
     exit
 }
@@ -108,7 +111,7 @@ function get_ashift_value() {
     echo -e " $ASHIFT_VALUE\n"
 
     if [[ $ASHIFT_VALUE -eq 12 ]]; then
-        read -rp "Fix 'ashift' value to 13 for SSDs? [y,N]: " CONFIRM_ASHIFT
+        read -rp "Fix 'ashift' value to 13 for SSDs? [Y,N]: " CONFIRM_ASHIFT
         if [[ -n "$CONFIRM_ASHIFT" && "${CONFIRM_ASHIFT,,}" == "y" ]]; then
             echo -e "\nNoted. 'ashift' value will be changed during the import.\n"
             FIX_ASHIFT=true
@@ -122,23 +125,22 @@ function get_ashift_value() {
 function zpool_import() {
     if [[ $FIX_ASHIFT == true ]]; then
         echo -e "\nImporting ZFS pool [$POOL_NAME] with fixed 'ashift' value for SSDs...\n"
-        zpool import -Nlf "$POOL_NAME" -o ashift=13
+        zpool import -lf "$POOL_NAME" -o ashift=13
         RET_CODE_IMPORT=$?
     else
         echo -e "\nImporting ZFS pool [$POOL_NAME]...\n"
-        zpool import -Nlf "$POOL_NAME"
+        zpool import -lf "$POOL_NAME"
         RET_CODE_IMPORT=$?
     fi
 
     if [[ $RET_CODE_IMPORT -eq 0 ]]; then
         POOL_IMPORTED=true
         echo -e "\nChecking imported ZFS pool status...\n"
-        zpool status -x
+        zpool status -x "$POOL_NAME"
         echo -e "\nGathering detailed ZFS pool status...\n"
         zpool status -v "$POOL_NAME"
     else
-        echo -e "\nError: Unable to import [$POOL_NAME].\n"
-        exit 3
+        die "Unable to import [$POOL_NAME]."
     fi
 }
 function list_snapshots() {
@@ -191,7 +193,7 @@ function zfs_unmount() {
         zfs umount "$POOL_NAME"/ROOT/cos/home
         zfs umount "$POOL_NAME"/ROOT/cos/varcache
         zfs umount "$POOL_NAME"/ROOT/cos/varlog
-        mount -v /dev/sda1 "$MOUNTPOINT"/boot
+        umount -v "$MOUNTPOINT"/boot
         zfs umount "$POOL_NAME"/ROOT/cos/root
         zfs set mountpoint=/home "$POOL_NAME"/ROOT/cos/home
         zfs set mountpoint=/ "$POOL_NAME"/ROOT/cos/root
@@ -224,6 +226,24 @@ function fix_boot() {
         die "Can't chroot in unmounted ZFS pool."
     fi
 }
+function load_chroot() {
+    if [[ $POOL_MOUNTED == true ]]; then
+        echo -e "Loading chroot...\n"
+        if [[ $DRY_RUN == true ]]; then
+            echo -e "[DRY-RUN] Should run: arch-chroot $MOUNTPOINT\n"
+        else
+            arch-chroot "$MOUNTPOINT"
+            RET_CODE_FIX=$?
+            if [[ $RET_CODE_FIX -eq 0 ]]; then
+                echo -e "\nDone.\n"
+            else
+                die "Unable to load chroot."
+            fi
+        fi
+    else
+        die "Can't chroot in unmounted ZFS pool."
+    fi
+}
 function zfs_export() {
     if [[ $POOL_MOUNTED == false ]]; then
         echo -e "\nExporting ZFS pool [$POOL_NAME]...\n"
@@ -242,12 +262,12 @@ function zfs_export() {
 }
 function check_zfs_pool() {
     echo -e "\nChecking ZFS pool(s)...\n"
-    zpool status -x "$POOL_NAME" 2>/dev/null || die "Could not find '$POOL_NAME' ZFS pool."
+    zpool status -x 2>/dev/null || die "Could not find any ZFS pool."
 }
 function init_recovery() {
     # Ask before init recovery
-    echo ; read -rp "This script will initialize CachyOS ZFS pool recovery process, continue? [y,N]: " CONFIRM_RECOVERY
-    if [[ -n "$CONFIRM_RECOVERY" && "${CONFIRM_RECOVERY,,}" == "y" ]]; then
+    echo ; read -rp "This script will initialize CachyOS ZFS pool recovery process, continue? [Y,N]: " CONFIRM_RECOVERY
+    if [[ -n $CONFIRM_RECOVERY && "${CONFIRM_RECOVERY,,}" == "y" ]]; then
         echo -e "\nAll good, let's do it then!.\n"
     else
         echo -e "\nNo problem, see you next time ;).\n"
@@ -258,13 +278,20 @@ function init_recovery() {
     echo -e "\nInitializing CachyOS ZFS pool recovery...\n"
     check_zfs_pool
     get_ashift_value
-    zpool_import
-    list_snapshots
-    create_mountpoints
-    zfs_mount
-    fix_boot
-    zfs_unmount
-    zfs_export
+    echo ; read -rp "Importing ZFS pool, continue? [Y,N]: " CONFIRM_IMPORT
+    [[ -n $CONFIRM_IMPORT && "${CONFIRM_IMPORT,,}" == "y" ]] && zpool_import
+    echo ; read -rp "Displaying existing snapshots, continue? [Y,N]: " CONFIRM_SHOW_SNAP
+    [[ -n $CONFIRM_SHOW_SNAP && "${CONFIRM_SHOW_SNAP,,}" == "y" ]] && list_snapshots
+    echo ; read -rp "Creating mountpoints, continue? [Y,N]: " CONFIRM_MOUNTPOINTS
+    [[ -n $CONFIRM_MOUNTPOINTS && "${CONFIRM_MOUNTPOINTS,,}" == "y" ]] && create_mountpoints
+    echo ; read -rp "Mounting ZFS pool, continue? [Y,N]: " CONFIRM_MOUNT
+    [[ -n $CONFIRM_MOUNT && "${CONFIRM_MOUNT,,}" == "y" ]] && zfs_mount
+    echo ; read -rp "Loading 'chroot' and fix boot, continue? [Y,N]: " CONFIRM_FIX
+    [[ -n $CONFIRM_FIX && "${CONFIRM_FIX,,}" == "y" ]] && fix_boot
+    echo ; read -rp "Unmounting ZFS pool, continue? [Y,N]: " CONFIRM_UMOUNT
+    [[ -n $CONFIRM_UMOUNT && "${CONFIRM_UMOUNT,,}" == "y" ]] && zfs_unmount
+    echo ; read -rp "Exporting ZFS pool, continue? [Y,N]: " CONFIRM_EXPORT
+    [[ -n $CONFIRM_EXPORT && "${CONFIRM_EXPORT,,}" == "y" ]] && zfs_export
 }
 
 # Header
