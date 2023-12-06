@@ -293,7 +293,7 @@ function init_recovery() {
 }
 
 # Header
-echo -e "\nSimple CachyOS ZFS boot recovery script"
+echo -e "\nSimple ZFS boot recovery script for CachyOS - v$(get_version)"
 
 # Arguments
 INDEX=0

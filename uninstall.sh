@@ -5,7 +5,7 @@
 #
 # Thanks to vnepogodin for the inspiration of the 'die' method :)
 #
-# Version 0.0.3
+# Version 0.0.4
 
 # Options
 set +o xtrace
@@ -19,6 +19,7 @@ INSTALL_SCRIPTS=(
     'zfs-snap-mgr.sh'
     'zfs-cos-recover.sh'
     'zfs-ssd-tune.sh'
+    'zfs-pool-mgr.sh'
 )
 
 # Overrides
@@ -28,13 +29,18 @@ INSTALL_SCRIPTS=(
 function get_version() {
     grep -i 'version' "$0" | awk '{ print $3 }' | head -n1
 }
+function print_header() {
+    if [[ $NO_HEADER == false ]]; then
+        echo -e "\nSimple $PROJECT_NAME uninstaller - v$(get_version)"
+    fi
+}
 function die() {
     echo -e "\nError: $*\n" >&2
     exit 255
 }
 
 # Header
-[[ $NO_HEADER == false ]] && echo -e "\nSimple $PROJECT_NAME uninstaller - v$(get_version)\n"
+print_header
 
 # Usage
 [[ $1 == "-h" && $1 == "--help" ]] && echo -e "\nUsage: $(basename "$0") -- Remove $PROJECT_NAME.\n" && exit 0

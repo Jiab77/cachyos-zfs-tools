@@ -11,14 +11,25 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.8
+# Version 0.0.9
 
 # Options
 set +o xtrace
 
+# Colors
+NC="\033[0m"
+NL="\n"
+BLUE="\033[1;34m"
+YELLOW="\033[1;33m"
+GREEN="\033[1;32m"
+RED="\033[1;31m"
+WHITE="\033[1;37m"
+PURPLE="\033[1;35m"
+
 # Config
 DEBUG_MODE=false
 DRY_RUN=false
+NO_HEADER=false
 RECURSIVE_MODE=false
 INCREMENTAL_MODE=false
 NO_PREFIX=false
@@ -27,6 +38,8 @@ USE_COMPRESSION=false
 COMPRESS_WITH_GZIP=false
 COMPRESS_WITH_XZ=false
 SAVE_ALL=false
+
+# Internals
 HOST_NAME=$(hostname -s)
 POOL_NAME=$(zpool list -H | awk '{ print $1 }')
 FIRST_SNAP=$(zfs list -t snapshot -H | head -n1 | awk '{ print $1 }')
@@ -44,12 +57,19 @@ SNAP_NAME="${SNAP_PREFIX}-${SNAP_DATE}"
 function get_version() {
     grep -i 'version' "$0" | awk '{ print $3 }' | head -n1
 }
+function print_header() {
+    if [[ $NO_HEADER == false ]]; then
+        echo -e "\nSimple ZFS snapshot manager for CachyOS - v$(get_version)"
+    fi
+}
 function show_version() {
     echo -e "\nVersion: $(get_version)\n" ; exit
 }
 function show_usage() {
+    print_header
     echo -e "\nUsage: $(basename "$0") <ACTION> [OPTIONS] -- Manage ZFS snapshots\n"
     echo -e "Action:\n"
+    echo -e "help\t\t\t\t\tShow this message and exit."
     echo -e "list\t\t\t\t\tList existing snapshots."
     echo -e "create\t\t\t\t\tCreate new snapshot."
     echo -e "send\t\t\t\t\tSend snapshot to remote file. (Inside a remotely mapped folder only)"
@@ -58,22 +78,23 @@ function show_usage() {
     echo -e "diff\t\t\t\t\tShow differences between last snapshot and now."
     echo -e "history\t\t\t\t\tShow all changes done on the pool."
     echo -e "\nOptions:\n"
-    echo -e "-h|--help\t\t\t\tShow this message."
-    echo -e "-v|--version\t\t\t\tShow script version."
+    echo -e "-h|--help\t\t\t\tShow this message and exit."
+    echo -e "-v|--version\t\t\t\tShow script version and exit."
     echo -e "-d|--debug\t\t\t\tEnable debug mode."
     echo -e "-n|--dry-run\t\t\t\tSimulate requested actions, don't execute them."
     echo -e "-r|--recursive\t\t\t\tRun <ACTION> recursively."
     echo -e "-i|--incremental\t\t\tMake incremental snapshot files."
-    echo -e "--all\t\t\t\tCombine all snapshots in a single file."
+    echo -e "--all\t\t\t\t\tCombine all snapshots in a single file."
+    echo -e "--no-header\t\t\t\tAvoid printing script header."
     echo -e "--no-prefix\t\t\t\tUse date only as snapshot name."
-    echo -e "--mountpoint=<mapped-remote-folder>\t\t\tSet locally mapped remote snapshot folder."
+    echo -e "--mountpoint=<remote-mapped-folder>\tSet locally mapped remote snapshot folder."
     echo -e "--name=<snapshot-name>\t\t\tSet snapshot name instead of default one. [Use '--no-prefix' to avoid adding the current date to the name]"
     echo -e "--compress=<gzip,xz>\t\t\tCompress snapshot file in given format. [NOT IMPLEMENTED YET]"
-    echo -e "\nDisclaimer:\n\n /!\ This script is still experimental so use it with caution. /!\ \n"
+    echo -e "${NL}${WHITE}Disclaimer:${NL}${NL} ${RED}/${YELLOW}!${RED}\ ${YELLOW}This script is still experimental so use it with caution. ${RED}/${YELLOW}!${RED}\ ${NC}${NL}"
     exit
 }
 function die() {
-    echo -e "\nError: $*\n" >&2
+    echo -e "${NL}${RED}Error: $*${NC}${NL}" >&2
     exit 255
 }
 function zpool_history() {
@@ -324,7 +345,9 @@ function zfs_diff() {
     fi
 }
 function init_snap_mgr() {
+    print_header
     case $ZFS_ACTION in
+        "help") NO_HEADER=true ; show_usage ;;
         "list") zfs_list ;;
         "create") zfs_create ;;
         "send") zfs_send ;;
@@ -334,9 +357,6 @@ function init_snap_mgr() {
         "history") zpool_history ;;
     esac
 }
-
-# Header
-echo -e "\nSimple CachyOS ZFS snapshot manager\n"
 
 # Checks
 [[ $# -eq 0 ]] && show_usage
@@ -349,16 +369,17 @@ for ARG in "$@"; do
     fi
 
     case $ARG in
-        "list"|"create"|"send"|"delete"|"dump"|"diff"|"history")
+        "help"|"list"|"create"|"send"|"delete"|"dump"|"diff"|"history")
             ZFS_ACTION="$ARG"
         ;;
         "-h"|"--help") show_usage ;;
         "-v"|"--version") show_version ;;
-        "-n"|"--dry-run") DRY_RUN=true ;;
         "-d"|"--debug") DEBUG_MODE=true ;;
+        "-n"|"--dry-run") DRY_RUN=true ;;
         "-r"|"--recursive") RECURSIVE_MODE=true ;;
         "-i"|"--incremental") INCREMENTAL_MODE=true ;;
         "--all") SAVE_ALL=true ;;
+        "--no-header") NO_HEADER=true ;;
         "--no-prefix") NO_PREFIX=true ;;
         "--mountpoint="*)
             [[ -z "${ARG/--mountpoint=/}" ]] && die "Missing remote snapshot mountpoint."

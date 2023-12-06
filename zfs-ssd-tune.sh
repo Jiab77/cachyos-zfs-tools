@@ -32,6 +32,16 @@
 # Options
 set -o xtrace
 
+# Colors
+NC="\033[0m"
+NL="\n"
+BLUE="\033[1;34m"
+YELLOW="\033[1;33m"
+GREEN="\033[1;32m"
+RED="\033[1;31m"
+WHITE="\033[1;37m"
+PURPLE="\033[1;35m"
+
 # Config
 DEBUG_MODE=false
 DRY_RUN=false
@@ -61,7 +71,7 @@ function show_usage() {
     echo -e "-r|--restore\tRestore default state."
     echo -e "-d|--debug\tEnable debug mode."
     echo -e "-n|--dry-run\tSimulate changes, don't apply them."
-    echo -e "\nDisclaimer:\n\n/!\ This script is still experimental so use it with caution. /!\ \n"
+    echo -e "${NL}${WHITE}Disclaimer:${NL}${NL} ${RED}/${YELLOW}!${RED}\ ${YELLOW}This script is still experimental so use it with caution. ${RED}/${YELLOW}!${RED}\ ${NC}${NL}"
     exit
 }
 function die() {
@@ -204,7 +214,7 @@ function init_zfs_tune() {
 }
 
 # Header
-echo -e "\nSimple CachyOS ZFS on SSD tuning script"
+echo -e "\nSimple ZFS on SSD tuning script for CachyOS - v$(get_version)"
 
 # Checks
 [[ $# -eq 0 ]] && show_usage
