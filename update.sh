@@ -32,5 +32,5 @@ echo -e "\nSimple $PROJECT_NAME updater - v$(get_version)\n"
 [[ $(id -u) -ne 0 ]] && die "You must run this script as root or with 'sudo'."
 
 # Main
-./uninstall.sh --no-header
-./install.sh --no-header
+bash ./uninstall.sh --no-header
+bash ./install.sh --no-header
