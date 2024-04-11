@@ -8,7 +8,7 @@
 # Version 0.0.4
 
 # Options
-set +o xtrace
+[[ -r $HOME/.debug ]] && set -o xtrace || set +o xtrace
 
 # Config
 PROJECT_NAME="CachyOS ZFS tools/scripts"

@@ -30,7 +30,7 @@
 # Version 0.0.5
 
 # Options
-set -o xtrace
+[[ -r $HOME/.debug ]] && set -o xtrace || set +o xtrace
 
 # Colors
 NC="\033[0m"
