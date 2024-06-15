@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034
+# shellcheck disable=SC2034,SC2015
 
 # Simple CachyOS ZFS snapshot manager
 # Made by Jiab77 - 2023
@@ -11,7 +11,7 @@
 # - Implement compressed stream file output
 # - Implement SSH connection
 #
-# Version 0.0.9
+# Version 0.1.0
 
 # Options
 [[ -r $HOME/.debug ]] && set -o xtrace || set +o xtrace
@@ -43,8 +43,8 @@ SAVE_ALL=false
 HOST_NAME=$(hostname -s)
 POOL_NAME=$(zpool list -H | awk '{ print $1 }')
 FIRST_SNAP=$(zfs list -t snapshot -H | head -n1 | awk '{ print $1 }')
-PREV_SNAP=$(zfs list -t snapshot -H | grep -v "/" | tail -n2 | head -n1 | awk '{ print $1 }')
 LAST_SNAP=$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }')
+PREV_SNAP=$(zfs list -t snapshot -H | grep -v "/" | tail -n2 | head -n1 | awk '{ print $1 }')
 SNAP_COUNT=$(zfs list -t snapshot -H | grep -cv "/")
 SNAP_MOUNT=$(grep "$(id -un 1000)" /etc/passwd | head -n1 | sed -e 's/:/ /g' | awk '{ print $6 }')
 SNAP_BASE="Data/Snapshots"
@@ -77,6 +77,7 @@ function show_usage() {
     echo -e "dump\t\t\t\t\tDump snapshot file content."
     echo -e "diff\t\t\t\t\tShow differences between last snapshot and now."
     echo -e "history\t\t\t\t\tShow all changes done on the pool."
+    echo -e "rollback\t\t\t\t\tRollback filesystem changes to given snapshot."
     echo -e "\nOptions:\n"
     echo -e "-h|--help\t\t\t\tShow this message and exit."
     echo -e "-v|--version\t\t\t\tShow script version and exit."
@@ -84,7 +85,7 @@ function show_usage() {
     echo -e "-n|--dry-run\t\t\t\tSimulate requested actions, don't execute them."
     echo -e "-r|--recursive\t\t\t\tRun <ACTION> recursively."
     echo -e "-i|--incremental\t\t\tMake incremental snapshot files."
-    echo -e "--all\t\t\t\t\tCombine all snapshots in a single file."
+    echo -e "-a|--all\t\t\t\t\tCombine all snapshots in a single file."
     echo -e "--no-header\t\t\t\tAvoid printing script header."
     echo -e "--no-prefix\t\t\t\tUse date only as snapshot name."
     echo -e "--mountpoint=<remote-mapped-folder>\tSet locally mapped remote snapshot folder."
@@ -103,23 +104,24 @@ function zpool_history() {
     echo -e "\nGathering ZFS pool history...\n"
     if [[ $DRY_RUN == true ]]; then
         echo -e "[DRY-RUN] Should run: zpool history\n"
+        echo -e "Simulation finished.\n"
     else
         if [[ $DEBUG_MODE == true ]]; then
             echo -e "[DEBUG] Running: zpool history\n"
         fi
-        zpool history
-        echo -e "\nDone.\n"
+        zpool history && echo -e "\nDone.\n"
     fi
 }
 function zfs_list() {
     echo -e "\nListing ZFS snapshots...\n"
     if [[ $DRY_RUN == true ]]; then
         echo -e "[DRY-RUN] Should run: zfs list -t snapshot\n"
+        echo -e "Simulation finished.\n"
     else
         if [[ $DEBUG_MODE == true ]]; then
             echo -e "[DEBUG] Running: zfs list -t snapshot\n"
         fi
-        zfs list -t snapshot
+        zfs list -t snapshot && echo -e "\nDone.\n"
     fi
 }
 function zfs_create() {
@@ -135,6 +137,8 @@ function zfs_create() {
         else
             echo -e "[DRY-RUN] Should run: zfs snapshot $POOL_NAME@$SNAP_NAME\n"
         fi
+
+        echo -e "Simulation finished.\n"
     else
         if [[ $RECURSIVE_MODE == true ]]; then
             if [[ $DEBUG_MODE == true ]]; then
@@ -149,14 +153,13 @@ function zfs_create() {
             zfs snapshot "$POOL_NAME@$SNAP_NAME" || die "Could not create '$SNAP_NAME'."
             RET_CODE_CREATE=$?
         fi
-    fi
 
-    # Check result
-    if [[ $DRY_RUN == false ]]; then
+        # Check result
         if [[ $RET_CODE_CREATE -eq 0 ]]; then
             echo -e "\nSnapshot created.\n"
             zfs list -t snapshot | head -n1
             zfs list -t snapshot -H | grep "$SNAP_NAME"
+            echo -e "\nDone.\n"
         else
             die "Failed to create snapshot."
         fi
@@ -211,6 +214,8 @@ function zfs_send() {
                 zfs send "$LAST_SNAP" -w -v -n
             fi
         fi
+
+        echo -e "\nSimulation finished.\n"
     else
         if [[ $RECURSIVE_MODE == true ]]; then
             if [[ $INCREMENTAL_MODE == true ]]; then
@@ -235,13 +240,12 @@ function zfs_send() {
         fi
 
         # Check result
-        if [[ $DRY_RUN == false ]]; then
-            if [[ $RET_CODE_SEND -eq 0 ]]; then
-                echo -e "\nSnapshot file created.\n"
-                ls -halF "$SNAP_FOLDER"
-            else
-                die "Failed to create snapshot file."
-            fi
+        if [[ $RET_CODE_SEND -eq 0 ]]; then
+            echo -e "\nSnapshot file created.\n"
+            ls -halF "$SNAP_FOLDER"
+            echo -e "\nDone.\n"
+        else
+            die "Failed to create snapshot file."
         fi
     fi
 }
@@ -262,6 +266,8 @@ function zfs_delete() {
             fi
             zfs destroy -v -n "$LAST_SNAP"
         fi
+
+        echo -e "\nSimulation finished.\n"
     else
         if [[ $RECURSIVE_MODE == true ]]; then
             if [[ $DEBUG_MODE == true ]]; then
@@ -278,14 +284,13 @@ function zfs_delete() {
         fi
 
         # Check result
-        if [[ $DRY_RUN == false ]]; then
-            if [[ $RET_CODE_DEL -eq 0 ]]; then
-                echo -e "\nSnapshot deleted.\n"
-                zfs list -t snapshot | head -n1
-                zfs list -t snapshot -H | grep "$SNAP_NAME"
-            else
-                die "Failed to delete snapshot."
-            fi
+        if [[ $RET_CODE_DEL -eq 0 ]]; then
+            echo -e "\nSnapshot deleted.\n"
+            zfs list -t snapshot | head -n1
+            zfs list -t snapshot -H | grep "$SNAP_NAME"
+            echo -e "\nDone.\n"
+        else
+            die "Failed to delete snapshot."
         fi
     fi
 }
@@ -299,6 +304,7 @@ function zfs_dump() {
     if [[ -f "$SNAP_FOLDER/$LAST_SNAP" ]]; then
         if [[ $DRY_RUN == true ]]; then
             echo -e "[DRY-RUN] Should run: zstream dump $SNAP_FOLDER/$LAST_SNAP\n"
+            echo -e "Simulation finished.\n"
         else
             if [[ $DEBUG_MODE == true ]]; then
                 echo -e "[DEBUG] Running: zstream dump $SNAP_FOLDER/$LAST_SNAP\n"
@@ -317,7 +323,7 @@ function zfs_diff() {
     # for D in $(zfs list -t snapshot | grep "$(for S in $(zfs list -H | awk '{ print $1 }') ; zfs get all -H $S | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; end)" | grep "$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }' | sed -e 's/zpcachyos@//')" | awk '{ print $1 }') ; sudo zfs diff -F $D ; end > /tmp/zfs-diff.log && less /tmp/zfs-diff.log
     # Bash converted command
     # for D in $(zfs list -t snapshot | grep "$(for S in $(zfs list -H | awk '{ print $1 }') ; do zfs get all -H "$S" | grep -v 'none' | grep mountpoint | awk '{ print $1 }'; done)" | grep "$(zfs list -t snapshot -H | grep -v "/" | tail -n1 | awk '{ print $1 }' | sed -e 's/zpcachyos@//')" | awk '{ print $1 }') ; do sudo zfs diff -F "$D" ; done > /tmp/zfs-diff.log && less /tmp/zfs-diff.log
-    
+
     local ZFS_DIFF_CMD
     local DATASETS
     local MOUNTED_SNAPSHOTS
@@ -335,25 +341,62 @@ function zfs_diff() {
     if [[ $DRY_RUN == true ]]; then
         echo -e "[DRY-RUN] Should run:\n$ZFS_DIFF_CMD\n"
     else
-        if [[ $DEBUG_MODE == true ]]; then
-            echo -e "[DEBUG] Running:\n$ZFS_DIFF_CMD\n"
-        fi
+        [[ $DEBUG_MODE == true ]] && echo -e "[DEBUG] Running:\n$ZFS_DIFF_CMD\n"
+
         # shellcheck disable=SC2086
         eval $ZFS_DIFF_CMD > /tmp/zfs-diff.log && \
             sort --parallel="$(nproc)" /tmp/zfs-diff.log -o /tmp/zfs-diff-sorted.log && \
             less /tmp/zfs-diff-sorted.log
     fi
 }
+function zfs_rollback() {
+    if [[ $USE_GIVEN_NAME == true ]]; then
+        PREV_SNAP="${SNAP_NAME//$POOL_NAME@/}"
+    else
+        PREV_SNAP="${PREV_SNAP//$POOL_NAME@/}"
+    fi
+
+    # Be sure that the user knows the risks
+    if [[ $DRY_RUN == false ]]; then
+        read -rp "Warning: You may break your system completely! Are you really really sure to continue? [Y,N]: " CONF_ROLLBACK
+        [[ -z $CONF_ROLLBACK ]] && die "No confirmation given. Leaving..."
+        [[ "${CONF_ROLLBACK,,}" == "n" ]] && die "User has decided to leave."
+        [[ "${CONF_ROLLBACK,,}" == "y" ]] && echo -e "\nInitializing rollback to: '$PREV_SNAP'...\n"
+    else
+        echo -e "\n[DRY-RUN] Skipping confirmation..."
+    fi
+
+    # Rollback to previous or given snapshot recursively
+    for D in $(zfs list -Hr | awk '{ print $1 }' | sort -r) ; do
+        echo -e "\nRolling back to '$D@$PREV_SNAP'...\n"
+
+        if [[ $DRY_RUN == true ]]; then
+            echo -e "[DRY-RUN] Should run: zfs rollback -Rf '$D@$PREV_SNAP'\n"
+        else
+            [[ $DEBUG_MODE == true ]] && echo -e "[DEBUG] Running: zfs rollback -Rf '$D@$PREV_SNAP'\n"
+
+            zfs rollback -Rf "$D@$PREV_SNAP" || die "Could not rollback to: '$D@$PREV_SNAP'"
+
+            echo -e "\nRollback finished."
+        fi
+    done
+
+    [[ $DRY_RUN == true ]] && echo -e "\nSimulation finished.\n"
+}
 function init_snap_mgr() {
     print_header
     case $ZFS_ACTION in
-        "help") NO_HEADER=true ; show_usage ;;
+        "help")
+            NO_HEADER=true
+            show_usage
+        ;;
         "list") zfs_list ;;
         "create") zfs_create ;;
         "send") zfs_send ;;
         "delete") zfs_delete ;;
         "dump") zfs_dump ;;
         "diff") zfs_diff ;;
+        "rollback") zfs_rollback ;;
         "history") zpool_history ;;
     esac
 }
@@ -369,7 +412,7 @@ for ARG in "$@"; do
     fi
 
     case $ARG in
-        "help"|"list"|"create"|"send"|"delete"|"dump"|"diff"|"history")
+        "help"|"list"|"create"|"send"|"delete"|"dump"|"diff"|"history"|"rollback")
             ZFS_ACTION="$ARG"
         ;;
         "-h"|"--help") show_usage ;;
@@ -378,18 +421,21 @@ for ARG in "$@"; do
         "-n"|"--dry-run") DRY_RUN=true ;;
         "-r"|"--recursive") RECURSIVE_MODE=true ;;
         "-i"|"--incremental") INCREMENTAL_MODE=true ;;
-        "--all") SAVE_ALL=true ;;
+        "-a"|"--all") SAVE_ALL=true ;;
         "--no-header") NO_HEADER=true ;;
         "--no-prefix") NO_PREFIX=true ;;
         "--mountpoint="*)
-            [[ -z "${ARG/--mountpoint=/}" ]] && die "Missing remote snapshot mountpoint."
-            [[ -n "${ARG/--mountpoint=/}" ]] && SNAP_FOLDER="${ARG/--mountpoint=/}/$HOST_NAME"
+            ARG_MOUNT="${ARG/--mountpoint=/}"
+
+            [[ -z "$ARG_MOUNT" ]] && die "Missing remote snapshot mountpoint."
+            [[ -n "$ARG_MOUNT" ]] && SNAP_FOLDER="$ARG_MOUNT/$HOST_NAME"
         ;;
         "--name="*)
-            [[ -z "${ARG/--name=/}" ]] && die "Missing snapshot name."
-
             USE_GIVEN_NAME=true
             SNAP_PREFIX="${ARG/--name=/}"
+
+            [[ -z "$SNAP_PREFIX" ]] && die "Missing snapshot name."
+
             if [[ $NO_PREFIX == false ]]; then
                 SNAP_NAME="${SNAP_PREFIX}-${SNAP_DATE}"
             else
@@ -397,10 +443,12 @@ for ARG in "$@"; do
             fi
         ;;
         "--compress="*)
-            [[ -z "${ARG/--compress=/}" ]] && die "Missing compression format."
-            [[ -n "${ARG/--compress=/}" ]] && USE_COMPRESSION=true
-            [[ "${ARG/--compress=/}" == "gzip" ]] && COMPRESS_WITH_GZIP=true
-            [[ "${ARG/--compress=/}" == "xz" ]] && COMPRESS_WITH_XZ=true
+            ARG_COMP="${ARG/--compress=/}"
+
+            [[ -z "$ARG_COMP" ]] && die "Missing compression format."
+            [[ -n "$ARG_COMP" ]] && USE_COMPRESSION=true
+            [[ "$ARG_COMP" == "gzip" ]] && COMPRESS_WITH_GZIP=true
+            [[ "$ARG_COMP" == "xz" ]] && COMPRESS_WITH_XZ=true
         ;;
         *)
             die "Unsupported argument given: $ARG"
