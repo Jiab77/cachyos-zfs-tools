@@ -10,7 +10,7 @@
 # - Detect SSDs
 # - Detect installed kernel
 #
-# Version 0.0.0
+# Version 0.0.1
 
 # Options
 [[ -r $HOME/.debug ]] && set -o xtrace || set +o xtrace
@@ -59,7 +59,7 @@ function die() {
     echo -e "\nError: $*\n" >&2
     exit 255
 }
-function zppol_detect() {
+function zpool_detect() {
     echo -e "\nSearching for existing ZFS pool(s)...\n"
     if [[ $DRY_RUN == true ]]; then
         echo -e "[DRY-RUN] Should run: zpool status -x\n"
@@ -71,7 +71,7 @@ function zppol_detect() {
         echo -e "\nDone.\n"
     fi
 }
-function zppol_status() {
+function zpool_status() {
     echo -e "\nShowing ZFS pool status...\n"
     if [[ $DRY_RUN == true ]]; then
         echo -e "[DRY-RUN] Should run: zpool status -v $POOL_NAME\n"
